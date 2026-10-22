@@ -374,3 +374,75 @@ output "database_endpoint" {
 output "database_secret_arn" {
   value = aws_db_instance.main.master_user_secret[0].secret_arn
 }
+
+resource "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+
+  client_id_list = [
+    "sts.amazonaws.com"
+  ]
+
+  tags = {
+    Name      = "github-actions-oidc"
+    Project   = "smart-inventory"
+    ManagedBy = "Terraform"
+  }
+}
+
+resource "aws_iam_role" "github_actions" {
+  name = "smart-inventory-DevOps-github-actions-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.github.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = "repo:Geevfted@195492645/Smart-Inventory-DevOps@1417050993:ref:refs/heads/main"
+        }
+      }
+    }]
+  })
+
+  tags = {
+    Name      = "smart-inventory-DevOps-github-actions-role"
+    Project   = "smart-inventory"
+    ManagedBy = "Terraform"
+  }
+}
+
+data "aws_ecr_repository" "smart_inventory" {
+  name = "smart-inventory-api"
+}
+
+resource "aws_iam_role_policy" "github_actions_ecr" {
+  name = "smart-inventory-DevOps-github-actions-ecr"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ]
+        Resource = data.aws_ecr_repository.smart_inventory.arn
+      }
+    ]
+  })
+}
